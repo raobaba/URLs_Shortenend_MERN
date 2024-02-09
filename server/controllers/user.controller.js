@@ -1,7 +1,7 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/user.model.js");
 
-const Register = async (req, res) => {
+const Register = async (req, res, next) => {
   try {
     const { username, email, password } = req.body;
     const existingUser = await User.findOne({ email });
@@ -12,53 +12,47 @@ const Register = async (req, res) => {
     await user.save();
     res.status(201).json({ user });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-const Login = async (req, res) => {
+const Login = async (req, res, next) => {
   const { email, password } = req.body;
-
   try {
-    const existingUser = await User.findOne({ email });
-    if (!existingUser) {
-      return res.status(400).json({ message: "Email does not exist" });
+    const user = await User.findOne({ email }).select("+password");
+    if (!user) {
+      return res.status(401).json({ message: "Invalid Email" });
     }
-    const user = await User.findOne({ email });
-    const generateToken = (user) => {
-      return jwt.sign(
-        { _id: user._id, username: user.username },
-        process.env.JWT_SECRET,
-        {
-          expiresIn: "1h",
-        }
-      );
-    };
-
-    if (user && (await user.comparePassword(password))) {
-      const token = generateToken(user);
-      res.json({user, token });
-    } else {
-      res.status(401).json({ message: "Invalid credentials" });
+    const isPasswordMatched = await user.comparePassword(password);
+    if (!isPasswordMatched) {
+      return res.status(401).json({ message: "Incorrect Password" });
     }
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "1h",
+    });
+    res.status(200).json({ user, token });
   } catch (error) {
+    console.error(error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 const Logout = async (req, res) => {
-  try {
-    req.user.tokens = [];
-    await req.user.save();
-
-    res.json({ message: "Logout successful" });
-  } catch (error) {
-    console.error(error);  // Log the error
-    res.status(500).json({ error: "Internal Server Error" });
-  }
+  res.clearCookie("token");
+  res.status(200).json({
+    success: true,
+    message: "Logged Out",
+  });
 };
+
+const GetProfile = (req, res) => {
+  res.json({ user: req.user });
+};
+
 module.exports = {
   Register,
   Login,
   Logout,
+  GetProfile,
 };
